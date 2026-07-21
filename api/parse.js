@@ -1,40 +1,45 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   const { text } = req.body;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // Автоматично прибираємо випадкові пробіли з ключа
+  const apiKey = process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.trim() : null;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'Не знайдено API-ключ у Vercel' });
+    return res.status(500).json({ error: 'API key is missing in Vercel' });
   }
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey.trim(),
-        'anthropic-version': '2023-06-01'
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
         max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: `Проаналізуй текст і виокреми з нього список конкретних задач. 
-Поверни СТРОГО тільки валидний JSON масив без додаткового тексту чи форматування markdown. 
+        messages: [
+          {
+            role: 'user',
+            content: `Витягни список задач з тексту. Поверни СТРОГО чистий JSON масив без форматування markdown чи слів.
+Формат: [{"title": "Назва", "priority": "High/Medium/Low", "time": "12:00 або null"}]
 
-Формат: [{"title": "Назва", "priority": "High/Medium/Low", "time": "Час або null"}]
-
-Текст: "${text}"`
-        }]
+Текст: ${text}`
+          }
+        ]
       })
     });
 
     const data = await response.json();
 
-    if (data.error) {
-      return res.status(400).json({ error: data.error.message });
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        error: data.error ? data.error.message : 'Помилка Anthropic API' 
+      });
     }
 
     const rawText = data.content[0].text.trim();
