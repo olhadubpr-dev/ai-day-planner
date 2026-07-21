@@ -1,13 +1,11 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
   const { text } = req.body;
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'API key is missing in Vercel settings.' });
+    return res.status(500).json({ error: 'Не знайдено API-ключ у Vercel' });
   }
 
   try {
@@ -15,21 +13,20 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': apiKey.trim(),
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-3-haiku-20240307',
         max_tokens: 1000,
         messages: [{
           role: 'user',
-          content: `Проаналізуй наступний текст і виокреми з нього список конкретних задач.
-          Поверни СТРОГО чистий JSON масив об'єктів. Жодного іншого тексту, привітань чи markdown-блоків (без \`\`\`json).
-          
-          Формат кожного елемента:
-          {"title": "Коротка назва задачі", "priority": "High/Medium/Low", "time": "Час/дедлайн або null"}
+          content: `Проаналізуй текст і виокреми з нього список конкретних задач. 
+Поверни СТРОГО тільки валидний JSON масив без додаткового тексту чи форматування markdown. 
 
-          Текст: "${text}"`
+Формат: [{"title": "Назва", "priority": "High/Medium/Low", "time": "Час або null"}]
+
+Текст: "${text}"`
         }]
       })
     });
@@ -37,27 +34,15 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (data.error) {
-      return res.status(400).json({ error: `Anthropic API Error: ${data.error.message}` });
+      return res.status(400).json({ error: data.error.message });
     }
 
-    if (!data.content || !data.content[0] || !data.content[0].text) {
-      return res.status(500).json({ error: 'Порожня відповідь від AI' });
-    }
+    const rawText = data.content[0].text.trim();
+    const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const tasks = JSON.parse(cleanText);
 
-    const rawContent = data.content[0].text.trim();
-    
-    const cleanJson = rawContent
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
-
-    const tasks = JSON.parse(cleanJson);
     return res.status(200).json({ tasks });
-
-  } catch (error) {
-    return res.status(500).json({ 
-      error: `Помилка обробки: ${error.message}` 
-    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 }
