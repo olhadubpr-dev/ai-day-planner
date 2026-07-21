@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-3-5-haiku-20241022',
         max_tokens: 1000,
         messages: [{
           role: 'user',
@@ -36,7 +36,6 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    // Якщо Anthropic повернув помилку (наприклад, немає грошей на балансі чи невалідний ключ)
     if (data.error) {
       return res.status(400).json({ error: `Anthropic API Error: ${data.error.message}` });
     }
@@ -47,7 +46,6 @@ export default async function handler(req, res) {
 
     const rawContent = data.content[0].text.trim();
     
-    // Очищення відповіді від можливих markdown-тегів
     const cleanJson = rawContent
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
