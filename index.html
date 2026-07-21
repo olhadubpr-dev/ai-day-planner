@@ -1,37 +1,191 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI-планер дня</title>
-<style>
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f4f3ef;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    text-align: center;
-    padding: 24px;
-    box-sizing: border-box;
-  }
-  .card {
-    background: white;
-    border-radius: 16px;
-    padding: 40px 32px;
-    max-width: 420px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  }
-  h1 { font-size: 22px; margin: 0 0 12px; color: #222; }
-  p { font-size: 16px; color: #555; line-height: 1.5; margin: 0; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Day Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
-<body>
-  <div class="card">
-    <h1>AI-планер дня 🚀</h1>
-    <p>Сайт успішно опубліковано. Наповнення (Capture → Inbox → Today) додається на наступному кроці.</p>
-  </div>
+<body class="bg-gray-50 text-gray-800 pb-20 min-h-screen">
+  <!-- Header -->
+  <header class="bg-indigo-600 text-white p-4 text-center font-bold text-xl shadow">
+    AI Day Planner
+  </header>
+
+  <!-- Container -->
+  <main class="max-w-md mx-auto p-4">
+    <!-- Capture Screen -->
+    <section id="tab-capture" class="space-y-4">
+      <h2 class="text-lg font-bold text-gray-700">Введення задач (Voice / Text)</h2>
+      <textarea id="userInput" rows="5" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Опишіть ваш день або плани голосом/текстом (напр. 'Завтра о 10 зустріч, купити молоко, терміново відправити звіт')..."></textarea>
+      
+      <div class="flex gap-2">
+        <button id="micBtn" onclick="toggleVoice()" class="w-1/3 bg-gray-200 hover:bg-gray-300 p-3 rounded-lg flex items-center justify-center text-gray-700 font-medium">
+          <i class="fas fa-microphone mr-2 text-indigo-600"></i> Голос
+        </button>
+        <button onclick="processAI()" class="w-2/3 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-lg font-bold shadow flex items-center justify-center">
+          <i class="fas fa-magic mr-2"></i> Обробити через AI
+        </button>
+      </div>
+      <p id="statusMsg" class="text-sm text-center text-gray-500 hidden"></p>
+    </section>
+
+    <!-- Inbox Screen -->
+    <section id="tab-inbox" class="space-y-4 hidden">
+      <h2 class="text-lg font-bold text-gray-700">Розпарсені задачі (Inbox)</h2>
+      <div id="inboxList" class="space-y-2">
+        <p class="text-gray-400 text-center py-8">Немає задач. Додайте їх на вкладці Capture!</p>
+      </div>
+    </section>
+
+    <!-- Today Screen -->
+    <section id="tab-today" class="space-y-4 hidden">
+      <h2 class="text-lg font-bold text-gray-700">План на сьогодні (Today)</h2>
+      <div id="todayList" class="space-y-2">
+        <p class="text-gray-400 text-center py-8">План порожній. Перенесіть задачі з Inbox!</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around p-3 shadow-lg max-w-md mx-auto">
+    <button onclick="switchTab('capture')" id="nav-capture" class="flex flex-col items-center text-indigo-600 font-bold">
+      <i class="fas fa-pen text-lg"></i>
+      <span class="text-xs">Capture</span>
+    </button>
+    <button onclick="switchTab('inbox')" id="nav-inbox" class="flex flex-col items-center text-gray-400 hover:text-indigo-600">
+      <i class="fas fa-inbox text-lg"></i>
+      <span class="text-xs">Inbox</span>
+    </button>
+    <button onclick="switchTab('today')" id="nav-today" class="flex flex-col items-center text-gray-400 hover:text-indigo-600">
+      <i class="fas fa-calendar-day text-lg"></i>
+      <span class="text-xs">Today</span>
+    </button>
+  </nav>
+
+  <script>
+    let inboxTasks = [];
+    let todayTasks = JSON.parse(localStorage.getItem('todayTasks') || '[]');
+
+    // Switch Tabs
+    function switchTab(tabName) {
+      ['capture', 'inbox', 'today'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+        document.getElementById(`nav-${t}`).className = "flex flex-col items-center text-gray-400 hover:text-indigo-600";
+      });
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+      document.getElementById(`nav-${tabName}`).className = "flex flex-col items-center text-indigo-600 font-bold";
+      
+      if(tabName === 'today') renderToday();
+    }
+
+    // Speech Recognition
+    function toggleVoice() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Ваш браузер не підтримує розпізнавання голосу. Введіть текст вручну.");
+        return;
+      }
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'uk-UA';
+      const micBtn = document.getElementById('micBtn');
+      micBtn.classList.add('bg-red-100', 'text-red-600');
+      
+      recognition.onresult = (e) => {
+        document.getElementById('userInput').value += " " + e.results[0][0].transcript;
+        micBtn.classList.remove('bg-red-100', 'text-red-600');
+      };
+      recognition.onerror = () => micBtn.classList.remove('bg-red-100', 'text-red-600');
+      recognition.start();
+    }
+
+    // Process via API
+    async function processAI() {
+      const text = document.getElementById('userInput').value.trim();
+      if (!text) return alert("Будь ласка, введіть текст або продиктуйте голосом!");
+      
+      const statusMsg = document.getElementById('statusMsg');
+      statusMsg.innerText = "AI обробляє ваш текст...";
+      statusMsg.classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        
+        if (data.tasks) {
+          inboxTasks = [...inboxTasks, ...data.tasks];
+          renderInbox();
+          document.getElementById('userInput').value = "";
+          statusMsg.innerText = "Успішно додано в Inbox!";
+          setTimeout(() => switchTab('inbox'), 800);
+        } else {
+          alert("Помилка обробки: " + (data.error || "Невідома помилка"));
+        }
+      } catch (err) {
+        alert("Помилка зв'язку з сервером. Перевірте API ключ на Vercel!");
+      } finally {
+        statusMsg.classList.add('hidden');
+      }
+    }
+
+    // Render Inbox
+    function renderInbox() {
+      const container = document.getElementById('inboxList');
+      if (inboxTasks.length === 0) {
+        container.innerHTML = `<p class="text-gray-400 text-center py-8">Немає задач.</p>`;
+        return;
+      }
+      container.innerHTML = inboxTasks.map((t, idx) => `
+        <div class="bg-white p-3 rounded-lg shadow-sm border flex justify-between items-center">
+          <div>
+            <div class="font-bold text-gray-800">${t.title}</div>
+            <div class="text-xs text-gray-500">Пріоритет: ${t.priority || 'Medium'} | Час: ${t.time || 'не вказано'}</div>
+          </div>
+          <button onclick="moveToToday(${idx})" class="bg-indigo-50 text-indigo-600 p-2 rounded-lg text-xs font-bold hover:bg-indigo-100">
+            В Today +
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function moveToToday(index) {
+      todayTasks.push({ ...inboxTasks[index], completed: false });
+      inboxTasks.splice(index, 1);
+      localStorage.setItem('todayTasks', JSON.stringify(todayTasks));
+      renderInbox();
+    }
+
+    // Render Today
+    function renderToday() {
+      const container = document.getElementById('todayList');
+      if (todayTasks.length === 0) {
+        container.innerHTML = `<p class="text-gray-400 text-center py-8">План порожній. Перенесіть задачі з Inbox!</p>`;
+        return;
+      }
+      container.innerHTML = todayTasks.map((t, idx) => `
+        <div class="bg-white p-3 rounded-lg shadow-sm border flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleDone(${idx})" class="h-5 w-5 text-indigo-600 rounded">
+            <span class="${t.completed ? 'line-through text-gray-400' : 'text-gray-800 font-medium'}">${t.title}</span>
+          </div>
+          <span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">${t.time || 'Сьогодні'}</span>
+        </div>
+      `).join('');
+    }
+
+    function toggleDone(index) {
+      todayTasks[index].completed = !todayTasks[index].completed;
+      localStorage.setItem('todayTasks', JSON.stringify(todayTasks));
+      renderToday();
+    }
+
+    // Init
+    renderToday();
+  </script>
 </body>
 </html>
