@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'API key is missing on server.' });
+    return res.status(500).json({ error: 'API key is missing in Vercel settings.' });
   }
 
   try {
@@ -23,22 +23,43 @@ export default async function handler(req, res) {
         max_tokens: 1000,
         messages: [{
           role: 'user',
-          content: `Проаналізуй наступний текст і виокреми з нього список конкретних задач. 
-          Поверни СТРОГО тільки валидний JSON масив без додаткового тексту чи форматування markdown. 
-          Формат кожної задачі: {"title": "Назва задачі", "priority": "High/Medium/Low", "time": "Час або дедлайн, якщо вказано"}.
+          content: `Проаналізуй наступний текст і виокреми з нього список конкретних задач.
+          Поверни СТРОГО чистий JSON масив об'єктів. Жодного іншого тексту, привітань чи markdown-блоків (без \`\`\`json).
           
+          Формат кожного елемента:
+          {"title": "Коротка назва задачі", "priority": "High/Medium/Low", "time": "Час/дедлайн або null"}
+
           Текст: "${text}"`
         }]
       })
     });
 
     const data = await response.json();
-    const rawContent = data.content[0].text;
-    const cleanJson = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
-    const tasks = JSON.parse(cleanJson);
 
+    // Якщо Anthropic повернув помилку (наприклад, немає грошей на балансі чи невалідний ключ)
+    if (data.error) {
+      return res.status(400).json({ error: `Anthropic API Error: ${data.error.message}` });
+    }
+
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+      return res.status(500).json({ error: 'Порожня відповідь від AI' });
+    }
+
+    const rawContent = data.content[0].text.trim();
+    
+    // Очищення відповіді від можливих markdown-тегів
+    const cleanJson = rawContent
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    const tasks = JSON.parse(cleanJson);
     return res.status(200).json({ tasks });
+
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to parse tasks', details: error.message });
+    return res.status(500).json({ 
+      error: `Помилка обробки: ${error.message}` 
+    });
   }
 }
