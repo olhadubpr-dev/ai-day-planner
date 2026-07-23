@@ -1,6 +1,0 @@
-{
-  "name": "Potik",
-  "description": "Розумний AI-планер дня «Potik» у стилі Todoist з голосовим введенням, інтелектуальним парсингом та переплануванням графіку",
-  "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
