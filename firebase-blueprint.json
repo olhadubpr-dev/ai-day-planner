@@ -1,0 +1,23 @@
+{
+  "entities": {
+    "tasks": {
+      "title": "Tasks",
+      "description": "Planner tasks synchronized across devices",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "priority": { "type": "string" },
+        "time": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "category": { "type": "string" },
+        "energyLevel": { "type": "string" },
+        "deadline": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "adviceReason": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    }
+  }
+}
