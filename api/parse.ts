@@ -21,6 +21,41 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "Будь ласка, вкажіть текст для парсингу." });
     }
 
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+    const afterTomorrow = new Date(now);
+    afterTomorrow.setDate(now.getDate() + 2);
+    const afterTomorrowStr = afterTomorrow.toISOString().split("T")[0];
+
+    const getUpcomingDateForDay = (targetDayIdx: number) => {
+      const currentIdx = now.getDay();
+      let diff = targetDayIdx - currentIdx;
+      if (diff < 0) diff += 7;
+      const d = new Date(now);
+      d.setDate(now.getDate() + diff);
+      return d.toISOString().split("T")[0];
+    };
+
+    const daysOfWeekUk = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота"];
+    const currentDayName = daysOfWeekUk[now.getDay()];
+
+    const fridayStr = getUpcomingDateForDay(5);
+
+    const daysCalendarPrompt = [
+      `Понеділок / у понеділок: ${getUpcomingDateForDay(1)}`,
+      `Вівторок / у вівторок: ${getUpcomingDateForDay(2)}`,
+      `Середа / у середу: ${getUpcomingDateForDay(3)}`,
+      `Четвер / у четвер: ${getUpcomingDateForDay(4)}`,
+      `П'ятниця / у п'ятницю / кінець робочого тижня: ${getUpcomingDateForDay(5)}`,
+      `Субота / у суботу: ${getUpcomingDateForDay(6)}`,
+      `Неділя / у неділю: ${getUpcomingDateForDay(0)}`,
+    ].join("\n");
+
     const anthropicKey = process.env.ANTHROPIC_API_KEY?.trim();
 
     // 1. If Anthropic Claude API key is provided, use Anthropic Claude
@@ -35,14 +70,35 @@ export default async function handler(req: any, res: any) {
           },
           body: JSON.stringify({
             model: "claude-haiku-4-5",
-            max_tokens: 1000,
+            max_tokens: 1500,
             messages: [
               {
                 role: "user",
-                content: `Витягни список задач з тексту українською мовою. Поверни СТРОГО чистий JSON масив об'єктів без будь-якого форматування markdown чи додаткового тексту.
-Формат масиву: [{"title": "Назва", "priority": "High/Medium/Low", "time": "12:00 або null", "durationMinutes": 30, "category": "Робота/Дім/Особисте", "energyLevel": "High/Medium/Low", "subtasks": ["підзадача 1"]}]
+                content: `Витягни список задач з тексту українською мовою. 
+Сьогоднішній день: ${todayStr} (${currentDayName}).
+Завтрашній день: ${tomorrowStr}.
+Післязавтра: ${afterTomorrowStr}.
 
-Текст: ${text}`,
+ТОЧНИЙ КАЛЕНДАР ДНІВ ТИЖНЯ ДЛЯ РОЗРАХУНКУ DATES ("YYYY-MM-DD"):
+${daysCalendarPrompt}
+
+ПРАВИЛА ВИЗНАЧЕННЯ DEADLINE ("YYYY-MM-DD" або null):
+- Якщо вказано "сьогодні" -> "${todayStr}"
+- Якщо вказано "завтра" -> "${tomorrowStr}"
+- Якщо вказано "післязавтра" -> "${afterTomorrowStr}"
+- Якщо вказано "до кінця робочого тижня" або "у п'ятницю" -> "${fridayStr}"
+- Якщо вказано конкретний день тижня (наприклад, "у суботу", "в четвер", "у п'ятницю") -> використай дату відповідного дня з календаря вище.
+- Якщо вказано конкретну дату ("25 липня") -> обчисли відповідну дату YYYY-MM-DD.
+- Якщо НЕМАЄ ЖОДНОЇ ДАТИ чи дня тижня у запиті -> обов'язково deadline: null.
+
+ПРАВИЛА ВИЗНАЧЕННЯ ЧАСУ ("HH:MM" або null):
+- Якщо вказано конкретний час ("до 19:00", "о 10:00", "о 10 ранку" -> "10:00", "о 18:00") -> перетвори в точний "HH:MM" (наприклад, "19:00").
+- Якщо немає точного часу -> time: null.
+
+Поверни СТРОГО чистий JSON масив об'єктів без будь-якого форматування markdown чи додаткового тексту.
+Формат масиву: [{"title": "Назва дії", "priority": "High/Medium/Low", "time": "HH:MM або null", "durationMinutes": 30, "category": "Робота/Дім/Особисте", "energyLevel": "High/Medium/Low", "deadline": "YYYY-MM-DD або null", "subtasks": ["підзадача 1"]}]
+
+Текст користувача: ${text}`,
               },
             ],
           }),
@@ -62,7 +118,7 @@ export default async function handler(req: any, res: any) {
             durationMinutes: t.durationMinutes || 30,
             category: t.category || "Загальні",
             energyLevel: t.energyLevel || "Medium",
-            deadline: null,
+            deadline: t.deadline || null,
             subtasks: (t.subtasks || []).map((subTitle: any, sIdx: number) => ({
               id: `sub-${Date.now()}-${idx}-${sIdx}`,
               title: typeof subTitle === "string" ? subTitle : subTitle.title,
@@ -85,36 +141,64 @@ export default async function handler(req: any, res: any) {
     if (!ai) {
       // Fallback rule-based
       const lines = text.split("\n").map((l: string) => l.trim()).filter(Boolean);
-      const fallbackTasks = lines.map((line: string, idx: number) => ({
-        id: `task-${Date.now()}-${idx}`,
-        title: line.replace(/^[-\*\d\.\s]+/, ""),
-        priority: line.toLowerCase().includes("терміново") || line.toLowerCase().includes("важливо") ? "High" : "Medium",
-        time: null,
-        durationMinutes: 30,
-        category: "Загальні",
-        energyLevel: "Medium",
-        deadline: null,
-        subtasks: [],
-        completed: false,
-        tags: ["введення"],
-      }));
+      const fallbackTasks = lines.map((line: string, idx: number) => {
+        const lower = line.toLowerCase();
+        let dl: string | null = null;
+        if (lower.includes("сьогодні")) dl = todayStr;
+        else if (lower.includes("завтра")) dl = tomorrowStr;
+        else if (lower.includes("п'ятниц") || lower.includes("кінець робочого тижня")) dl = fridayStr;
+
+        return {
+          id: `task-${Date.now()}-${idx}`,
+          title: line.replace(/^[-\*\d\.\s]+/, ""),
+          priority: lower.includes("терміново") || lower.includes("важливо") ? "High" : "Medium",
+          time: null,
+          durationMinutes: 30,
+          category: "Загальні",
+          energyLevel: "Medium",
+          deadline: dl,
+          subtasks: [],
+          completed: false,
+          tags: ["введення"],
+        };
+      });
       return res.status(200).json({ tasks: fallbackTasks });
     }
 
     const prompt = `Ви — інтелектуальний асистент-планер завдань (у стилі Todoist).
 Витягни всі детальні задачі з наданого тексту/голосової розшифровки українською мовою.
 
+Сьогоднішній день: ${todayStr} (${currentDayName}).
+Завтрашній день: ${tomorrowStr}.
+Післязавтра: ${afterTomorrowStr}.
+
+ТОЧНИЙ КАЛЕНДАР ДНІВ ТИЖНЯ ДЛЯ РОЗРАХУНКУ DATES ("YYYY-MM-DD"):
+${daysCalendarPrompt}
+
 Текст користувача:
 "${text}"
+
+ПРАВИЛА ВИЗНАЧЕННЯ DEADLINE ("YYYY-MM-DD" або null):
+- Якщо вказано "сьогодні" -> "${todayStr}"
+- Якщо вказано "завтра" -> "${tomorrowStr}"
+- Якщо вказано "післязавтра" -> "${afterTomorrowStr}"
+- Якщо вказано "до кінця робочого тижня" або "у п'ятницю" -> "${fridayStr}"
+- Якщо вказано конкретний день тижня (наприклад, "у суботу", "у вівторок", "у п'ятницю") -> використай точну дату з календаря вище.
+- Якщо вказано дату ("25 липня") -> обчисли відповідну дату "YYYY-MM-DD".
+- Якщо НЕМАЄ ЖОДНОЇ ДАТИ чи дня тижня у запиті -> обов'язково deadline: null.
+
+ПРАВИЛА ВИЗНАЧЕННЯ ЧАСУ ("HH:MM" або null):
+- Якщо вказано конкретний час ("до 19:00", "о 10:00", "о 10 ранку" -> "10:00", "о 18:00") -> сформуй у точний формат "HH:MM" (наприклад, "19:00").
+- Якщо немає конкретного часу -> time: null.
 
 Проаналізуй контекст, розбий складні думки на конкретні кроки, визнач:
 - title: Чітка назва дії (дієслово в початковій формі або конкретна задача українською).
 - priority: "High" (високий/терміново), "Medium" (звичайний), "Low" (низький/за наявності часу).
-- time: Точний час у форматі "HH:MM" (наприклад "10:00", "14:30") або null, якщо конкретну годину не вказано.
+- time: Точний час у форматі "HH:MM" (наприклад "10:00", "19:00") або null, якщо конкретну годину не вказано.
 - durationMinutes: Орієнтовна тривалість у хвилинах (число: 15, 30, 45, 60, 120 тощо).
 - category: Сфера життя ("Робота", "Особисте", "Здоров'я", "Навчання", "Дім", "Фінанси").
 - energyLevel: Необхідний рівень фокусу/енергії ("High" - важкі інтелектуальні, "Medium" - стандартні, "Low" - рутина/легкі).
-- deadline: Дата у форматі "YYYY-MM-DD" або null. (Сьогоднішнє число: ${new Date().toISOString().split("T")[0]}).
+- deadline: Дата у форматі "YYYY-MM-DD" або null за правилами вище.
 - subtasks: Масив з 1-3 підзадач (рядок), якщо задача масштабна, або порожній масив [].
 - tags: Короткі теги українською (наприклад: ["зустріч", "дзвінок", "покупка"]).`;
 
