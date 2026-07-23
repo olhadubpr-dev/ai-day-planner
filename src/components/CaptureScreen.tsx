@@ -24,6 +24,53 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
   const recognitionRef = useRef<any>(null);
   const initialTextRef = useRef<string>("");
 
+  // Helper to cleanly process Web Speech API results across mobile (Android Chrome) and desktop
+  const processSpeechResults = (results: any): string => {
+    const cleanChunks: string[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const rawChunk = results[i]?.[0]?.transcript?.trim();
+      if (!rawChunk) continue;
+
+      const normChunk = rawChunk.toLowerCase().replace(/[.,!?:;]/g, "").replace(/\s+/g, " ").trim();
+      if (!normChunk) continue;
+
+      if (cleanChunks.length === 0) {
+        cleanChunks.push(rawChunk);
+        continue;
+      }
+
+      const fullCurrent = cleanChunks.join(" ");
+      const normFull = fullCurrent.toLowerCase().replace(/[.,!?:;]/g, "").replace(/\s+/g, " ").trim();
+
+      // If current chunk starts with full transcript so far (Android cumulative result update)
+      if (normChunk.startsWith(normFull)) {
+        cleanChunks.length = 0;
+        cleanChunks.push(rawChunk);
+        continue;
+      }
+
+      // If current chunk starts with the last chunk (interim extension)
+      const lastChunk = cleanChunks[cleanChunks.length - 1];
+      const normLast = lastChunk.toLowerCase().replace(/[.,!?:;]/g, "").replace(/\s+/g, " ").trim();
+
+      if (normChunk.startsWith(normLast)) {
+        cleanChunks[cleanChunks.length - 1] = rawChunk;
+        continue;
+      }
+
+      // If current chunk is a subset of what we already have, ignore it
+      if (normFull.endsWith(normChunk) || normLast.endsWith(normChunk) || normFull.includes(normChunk)) {
+        continue;
+      }
+
+      // Genuine new clause
+      cleanChunks.push(rawChunk);
+    }
+
+    return cleanChunks.join(" ").replace(/\s+/g, " ").trim();
+  };
+
   // Web Speech API Voice Recognition
   const toggleVoice = () => {
     const SpeechRecognition =
@@ -57,19 +104,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({
       };
 
       recognition.onresult = (e: any) => {
-        let finalTranscript = "";
-        let interimTranscript = "";
+        if (!e.results) return;
 
-        for (let i = 0; i < e.results.length; i++) {
-          const transcriptChunk = e.results[i][0].transcript;
-          if (e.results[i].isFinal) {
-            finalTranscript += transcriptChunk + " ";
-          } else {
-            interimTranscript += transcriptChunk;
-          }
-        }
-
-        const sessionText = (finalTranscript + interimTranscript).replace(/\s+/g, " ").trim();
+        const sessionText = processSpeechResults(e.results);
         const base = initialTextRef.current;
         const fullText = base ? `${base} ${sessionText}` : sessionText;
 
